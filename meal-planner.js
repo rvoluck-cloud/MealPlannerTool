@@ -1,5 +1,5 @@
 // Meal Planner JavaScript
-// Version 3.3 - Improved Ingredient Categorization
+// Version 4.0 - Column-based Category Mapping
 
 // Google Sheets CSV export URL
 const SHEET_URL = "https://docs.google.com/spreadsheets/d/1oWS7CQUtyxvZheGa0HckhGGPt9_gxELDGdCL8-DtKbM/export?format=csv";
@@ -9,45 +9,32 @@ const CATEGORIES = {
     'dairy': {
         name: 'Dairy',
         icon: '📦',
-        keywords: ['milk', 'cheese', 'butter', 'cream', 'yogurt', 'sour cream', 'parmesan', 
-                  'mozzarella', 'cheddar', 'feta', 'ricotta', 'cottage cheese']
+        column: 'Dairy Ingredients'
     },
     'fruit': {
         name: 'Fruit',
         icon: '🍎',
-        keywords: ['apple', 'banana', 'orange', 'lemon', 'lime', 'berry', 'berries', 'strawberry', 
-                  'blueberry', 'grape', 'melon', 'pear', 'peach', 'mango', 'pineapple', 'avocado']
+        column: 'Fruit Ingredients'
     },
     'vegetables': {
         name: 'Vegetables',
         icon: '🥕',
-        keywords: ['lettuce', 'tomato', 'onion', 'garlic', 'pepper', 'carrot', 'celery', 
-                   'cucumber', 'broccoli', 'cauliflower', 'spinach', 'kale', 'cabbage', 
-                   'zucchini', 'squash', 'potato', 'sweet potato', 'corn', 'peas', 
-                   'green beans', 'asparagus', 'mushroom', 'eggplant', 'radish']
-    },
-    'herbs': {
-        name: 'Herbs & Spices',
-        icon: '🌿',
-        keywords: ['basil', 'parsley', 'cilantro', 'thyme', 'rosemary', 'oregano', 'dill', 
-                  'mint', 'sage', 'chives', 'bay leaf']
+        column: 'Vegetable Ingredients'
     },
     'proteins': {
         name: 'Proteins',
         icon: '🍗',
-        keywords: ['chicken', 'beef', 'pork', 'turkey', 'fish', 'salmon', 'tuna', 'shrimp', 
-                   'lamb', 'bacon', 'sausage', 'ham', 'egg', 'tofu', 'beans', 'lentils', 
-                   'chickpeas', 'ground beef', 'ground turkey', 'steak', 'breast']
+        column: 'Meat Ingredients'
     },
     'frozen': {
         name: 'Frozen',
         icon: '❄️',
-        keywords: ['frozen', 'ice cream', 'popsicle']
+        column: 'Frozen Ingredients'
     },
     'pantry': {
         name: 'Pantry Items',
         icon: '🥫',
-        keywords: []
+        column: 'Pantry Ingredients'
     }
 };
 
@@ -122,74 +109,6 @@ function parseIngredients(ingredientText) {
     return ingredientText.split('\n')
         .map(ing => ing.trim())
         .filter(ing => ing.length > 0);
-}
-
-// Categorize an ingredient
-function categorizeIngredient(ingredient) {
-    const ingredientLower = ingredient.toLowerCase();
-    
-    // Special case overrides - check these first
-    // Pantry items that might otherwise be miscategorized
-    const pantryOverrides = [
-        'broth', 'stock', 'bean', 'beans', 'chickpea', 'chickpeas', 'lentil', 'lentils',
-        'can', 'canned', 'tomato sauce', 'pasta sauce', 'marinara', 'sun-dried tomato',
-        'sundried tomato', 'sun dried tomato', 'tomatoes in oil', 'tomato paste',
-        'tomato puree', 'crushed tomato', 'diced tomato', 'canned tomato'
-    ];
-    
-    for (const keyword of pantryOverrides) {
-        if (ingredientLower.includes(keyword)) {
-            return 'pantry';
-        }
-    }
-    
-    // Dairy overrides
-    const dairyOverrides = ['half and half', 'half-and-half', 'heavy cream', 'whipping cream'];
-    for (const keyword of dairyOverrides) {
-        if (ingredientLower.includes(keyword)) {
-            return 'dairy';
-        }
-    }
-    
-    // Herb overrides - specific items that should be herbs
-    const herbOverrides = ['scallion', 'scallions', 'green onion', 'green onions', 
-                           'basil', 'parsley', 'cilantro', 'thyme', 'rosemary', 
-                           'oregano', 'dill', 'mint', 'sage', 'chives'];
-    for (const keyword of herbOverrides) {
-        if (ingredientLower.includes(keyword)) {
-            return 'herbs';
-        }
-    }
-    
-    // Vegetable overrides - make sure these go to vegetables
-    const vegetableOverrides = [
-        'lettuce', 'spinach', 'kale', 'arugula', 'cabbage', 'bok choy',
-        'carrot', 'celery', 'cucumber', 'zucchini', 'squash',
-        'bell pepper', 'jalapeño', 'poblano', 'serrano',
-        'broccoli', 'cauliflower', 'brussels sprout',
-        'potato', 'sweet potato', 'yam',
-        'corn', 'peas', 'green bean', 'snap pea',
-        'asparagus', 'artichoke', 'eggplant', 'radish',
-        'beet', 'turnip', 'parsnip', 'leek'
-    ];
-    for (const keyword of vegetableOverrides) {
-        if (ingredientLower.includes(keyword)) {
-            return 'vegetables';
-        }
-    }
-    
-    // Now check regular categories
-    for (const [category, data] of Object.entries(CATEGORIES)) {
-        if (category === 'pantry') continue;
-        
-        for (const keyword of data.keywords) {
-            if (ingredientLower.includes(keyword)) {
-                return category;
-            }
-        }
-    }
-    
-    return 'pantry';
 }
 
 // Select random meals
@@ -284,7 +203,7 @@ function normalizeIngredientName(name) {
     return normalized;
 }
 
-// Generate grocery list from selected meals
+// Generate grocery list from selected meals using column-based categories
 function generateGroceryList(selectedMeals) {
     const groceryList = {};
     const consolidatedItems = {};
@@ -295,37 +214,45 @@ function generateGroceryList(selectedMeals) {
         consolidatedItems[cat] = {};
     });
     
-    // Collect and consolidate ingredients
+    // Collect and consolidate ingredients from each category column
     selectedMeals.forEach(meal => {
-        const ingredients = parseIngredients(meal['Ingredient List']);
-        ingredients.forEach(ingredient => {
-            const category = categorizeIngredient(ingredient);
-            const parsed = parseIngredientQuantity(ingredient);
-            const normalizedName = normalizeIngredientName(parsed.item);
+        // Process each category
+        Object.entries(CATEGORIES).forEach(([categoryKey, categoryData]) => {
+            const columnName = categoryData.column;
+            const ingredientsText = meal[columnName];
             
-            // Create a key for consolidation
-            const unit = normalizeUnit(parsed.unit);
-            const key = `${normalizedName}|||${unit}`;
+            if (!ingredientsText) return;
             
-            if (!consolidatedItems[category][key]) {
-                consolidatedItems[category][key] = {
-                    name: normalizedName,
-                    unit: unit,
-                    quantity: 0,
-                    originalUnit: parsed.unit,
-                    hasQuantity: false,
-                    items: []
-                };
-            }
+            const ingredients = parseIngredients(ingredientsText);
             
-            // Add quantity if present
-            if (parsed.quantity) {
-                consolidatedItems[category][key].quantity += fractionToDecimal(parsed.quantity);
-                consolidatedItems[category][key].hasQuantity = true;
-            }
-            
-            // Keep track of original items for reference
-            consolidatedItems[category][key].items.push(parsed.original);
+            ingredients.forEach(ingredient => {
+                const parsed = parseIngredientQuantity(ingredient);
+                const normalizedName = normalizeIngredientName(parsed.item);
+                
+                // Create a key for consolidation
+                const unit = normalizeUnit(parsed.unit);
+                const key = `${normalizedName}|||${unit}`;
+                
+                if (!consolidatedItems[categoryKey][key]) {
+                    consolidatedItems[categoryKey][key] = {
+                        name: normalizedName,
+                        unit: unit,
+                        quantity: 0,
+                        originalUnit: parsed.unit,
+                        hasQuantity: false,
+                        items: []
+                    };
+                }
+                
+                // Add quantity if present
+                if (parsed.quantity) {
+                    consolidatedItems[categoryKey][key].quantity += fractionToDecimal(parsed.quantity);
+                    consolidatedItems[categoryKey][key].hasQuantity = true;
+                }
+                
+                // Keep track of original items for reference
+                consolidatedItems[categoryKey][key].items.push(parsed.original);
+            });
         });
     });
     
@@ -392,7 +319,17 @@ function renderMealPlan(selectedMeals) {
         
         const mealName = meal['Meal Name'] || 'Unknown Meal';
         const recipeLink = meal['Recipe Link (if relevant)'] || '';
-        const ingredients = parseIngredients(meal['Ingredient List']);
+        
+        // Collect all ingredients from all category columns
+        const allIngredients = [];
+        Object.values(CATEGORIES).forEach(categoryData => {
+            const columnName = categoryData.column;
+            const ingredientsText = meal[columnName];
+            if (ingredientsText) {
+                const ingredients = parseIngredients(ingredientsText);
+                allIngredients.push(...ingredients);
+            }
+        });
         
         let html = `
             <div class="meal-card-header">
@@ -406,9 +343,9 @@ function renderMealPlan(selectedMeals) {
             </div>
         `;
         
-        if (ingredients.length > 0) {
+        if (allIngredients.length > 0) {
             html += '<ul class="ingredients-list">';
-            ingredients.forEach(ing => {
+            allIngredients.forEach(ing => {
                 html += `<li>${ing}</li>`;
             });
             html += '</ul>';
@@ -428,7 +365,7 @@ function renderGroceryList(groceryList) {
     const container = document.getElementById('groceryListContent');
     container.innerHTML = '';
     
-    const categoryOrder = ['dairy', 'fruit', 'vegetables', 'herbs', 'proteins', 'frozen', 'pantry'];
+    const categoryOrder = ['dairy', 'fruit', 'vegetables', 'proteins', 'frozen', 'pantry'];
     
     categoryOrder.forEach(catKey => {
         const items = groceryList[catKey];
@@ -522,10 +459,20 @@ function copyToClipboard() {
         text += `Night ${index + 1}: ${meal['Meal Name']}\n`;
         text += '-'.repeat(60) + '\n';
         
-        const ingredients = parseIngredients(meal['Ingredient List']);
-        if (ingredients.length > 0) {
+        // Collect all ingredients from all category columns
+        const allIngredients = [];
+        Object.values(CATEGORIES).forEach(categoryData => {
+            const columnName = categoryData.column;
+            const ingredientsText = meal[columnName];
+            if (ingredientsText) {
+                const ingredients = parseIngredients(ingredientsText);
+                allIngredients.push(...ingredients);
+            }
+        });
+        
+        if (allIngredients.length > 0) {
             text += 'Ingredients:\n';
-            ingredients.forEach(ing => {
+            allIngredients.forEach(ing => {
                 text += `  • ${ing}\n`;
             });
         }
@@ -542,7 +489,7 @@ function copyToClipboard() {
     text += 'GROCERY LIST\n';
     text += '='.repeat(60) + '\n\n';
     
-    const categoryOrder = ['dairy', 'fruit', 'vegetables', 'herbs', 'proteins', 'frozen', 'pantry'];
+    const categoryOrder = ['dairy', 'fruit', 'vegetables', 'proteins', 'frozen', 'pantry'];
     
     categoryOrder.forEach(catKey => {
         const items = currentPlan.groceryList[catKey];
