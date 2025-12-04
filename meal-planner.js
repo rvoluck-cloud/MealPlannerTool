@@ -1,5 +1,5 @@
 // Meal Planner JavaScript
-// Version 3.1 - Individual Meal Swap Feature
+// Version 3.2 - Ingredient Consolidation & Quantity Aggregation
 
 // Google Sheets CSV export URL
 const SHEET_URL = "https://docs.google.com/spreadsheets/d/1oWS7CQUtyxvZheGa0HckhGGPt9_gxELDGdCL8-DtKbM/export?format=csv";
@@ -151,27 +151,179 @@ function selectMeals(numMeals) {
     return shuffled.slice(0, numMeals);
 }
 
+// Parse quantity and unit from ingredient string
+function parseIngredientQuantity(ingredient) {
+    // Match patterns like "2 cups", "1/2 pound", "3 tablespoons", etc.
+    const quantityPattern = /^(\d+\/?\d*\.?\d*)\s*(cup|cups|tablespoon|tablespoons|tbsp|teaspoon|teaspoons|tsp|pound|pounds|lb|lbs|ounce|ounces|oz|clove|cloves|can|cans|jar|jars|medium|large|small)?/i;
+    const match = ingredient.match(quantityPattern);
+    
+    if (match) {
+        const quantity = match[1];
+        const unit = match[2] || '';
+        const item = ingredient.replace(match[0], '').trim();
+        return { quantity, unit, item, original: ingredient };
+    }
+    
+    return { quantity: null, unit: '', item: ingredient, original: ingredient };
+}
+
+// Convert fraction string to decimal
+function fractionToDecimal(fraction) {
+    if (fraction.includes('/')) {
+        const parts = fraction.split('/');
+        return parseFloat(parts[0]) / parseFloat(parts[1]);
+    }
+    return parseFloat(fraction);
+}
+
+// Normalize unit names
+function normalizeUnit(unit) {
+    const unitMap = {
+        'cup': 'cup',
+        'cups': 'cup',
+        'tablespoon': 'tbsp',
+        'tablespoons': 'tbsp',
+        'tbsp': 'tbsp',
+        'teaspoon': 'tsp',
+        'teaspoons': 'tsp',
+        'tsp': 'tsp',
+        'pound': 'lb',
+        'pounds': 'lb',
+        'lb': 'lb',
+        'lbs': 'lb',
+        'ounce': 'oz',
+        'ounces': 'oz',
+        'oz': 'oz',
+        'clove': 'clove',
+        'cloves': 'clove',
+        'can': 'can',
+        'cans': 'can',
+        'jar': 'jar',
+        'jars': 'jar',
+        'medium': 'medium',
+        'large': 'large',
+        'small': 'small'
+    };
+    
+    return unitMap[unit.toLowerCase()] || unit.toLowerCase();
+}
+
+// Normalize ingredient name for comparison
+function normalizeIngredientName(name) {
+    // Remove common descriptors but keep important ones
+    let normalized = name.toLowerCase()
+        .replace(/\(.*?\)/g, '') // Remove parenthetical notes
+        .replace(/,.*$/, '') // Remove everything after comma
+        .replace(/\s+/g, ' ')
+        .trim();
+    
+    // Remove common qualifiers that don't affect consolidation
+    const removeWords = ['fresh', 'dried', 'chopped', 'diced', 'sliced', 'minced', 'peeled', 
+                         'shredded', 'grated', 'crushed', 'whole', 'halved', 'quartered',
+                         'optional', 'to taste', 'or more', 'about', 'approximately'];
+    
+    removeWords.forEach(word => {
+        const regex = new RegExp(`\\b${word}\\b`, 'gi');
+        normalized = normalized.replace(regex, '').trim();
+    });
+    
+    // Clean up extra spaces
+    normalized = normalized.replace(/\s+/g, ' ').trim();
+    
+    return normalized;
+}
+
 // Generate grocery list from selected meals
 function generateGroceryList(selectedMeals) {
     const groceryList = {};
+    const consolidatedItems = {};
     
     // Initialize categories
     Object.keys(CATEGORIES).forEach(cat => {
-        groceryList[cat] = new Set();
+        groceryList[cat] = [];
+        consolidatedItems[cat] = {};
     });
     
-    // Collect ingredients
+    // Collect and consolidate ingredients
     selectedMeals.forEach(meal => {
         const ingredients = parseIngredients(meal['Ingredient List']);
         ingredients.forEach(ingredient => {
             const category = categorizeIngredient(ingredient);
-            groceryList[category].add(ingredient);
+            const parsed = parseIngredientQuantity(ingredient);
+            const normalizedName = normalizeIngredientName(parsed.item);
+            
+            // Create a key for consolidation
+            const unit = normalizeUnit(parsed.unit);
+            const key = `${normalizedName}|||${unit}`;
+            
+            if (!consolidatedItems[category][key]) {
+                consolidatedItems[category][key] = {
+                    name: normalizedName,
+                    unit: unit,
+                    quantity: 0,
+                    originalUnit: parsed.unit,
+                    hasQuantity: false,
+                    items: []
+                };
+            }
+            
+            // Add quantity if present
+            if (parsed.quantity) {
+                consolidatedItems[category][key].quantity += fractionToDecimal(parsed.quantity);
+                consolidatedItems[category][key].hasQuantity = true;
+            }
+            
+            // Keep track of original items for reference
+            consolidatedItems[category][key].items.push(parsed.original);
         });
     });
     
-    // Convert sets to sorted arrays
-    Object.keys(groceryList).forEach(cat => {
-        groceryList[cat] = Array.from(groceryList[cat]).sort();
+    // Format consolidated items
+    Object.keys(consolidatedItems).forEach(cat => {
+        const items = consolidatedItems[cat];
+        const formattedItems = [];
+        
+        Object.values(items).forEach(item => {
+            if (item.hasQuantity && item.quantity > 0) {
+                // Format quantity nicely
+                let quantityStr = item.quantity.toString();
+                
+                // Convert to fraction if it makes sense
+                if (item.quantity < 1) {
+                    if (item.quantity === 0.5) quantityStr = '1/2';
+                    else if (item.quantity === 0.25) quantityStr = '1/4';
+                    else if (item.quantity === 0.75) quantityStr = '3/4';
+                    else if (item.quantity === 0.333 || item.quantity.toFixed(2) === '0.33') quantityStr = '1/3';
+                    else if (item.quantity === 0.666 || item.quantity.toFixed(2) === '0.67') quantityStr = '2/3';
+                    else quantityStr = item.quantity.toFixed(2);
+                } else if (item.quantity % 1 !== 0) {
+                    // Has decimal part
+                    const whole = Math.floor(item.quantity);
+                    const decimal = item.quantity - whole;
+                    
+                    if (decimal === 0.5) quantityStr = `${whole} 1/2`;
+                    else if (decimal === 0.25) quantityStr = `${whole} 1/4`;
+                    else if (decimal === 0.75) quantityStr = `${whole} 3/4`;
+                    else if (decimal.toFixed(2) === '0.33') quantityStr = `${whole} 1/3`;
+                    else if (decimal.toFixed(2) === '0.67') quantityStr = `${whole} 2/3`;
+                    else quantityStr = item.quantity.toFixed(2);
+                }
+                
+                const unitStr = item.originalUnit || item.unit;
+                const unitDisplay = unitStr ? ` ${unitStr}` : '';
+                formattedItems.push(`${quantityStr}${unitDisplay} ${item.name}`);
+            } else {
+                // No quantity specified, just list the item
+                // If multiple recipes have it, note that
+                if (item.items.length > 1) {
+                    formattedItems.push(`${item.name} (needed for ${item.items.length} recipes)`);
+                } else {
+                    formattedItems.push(item.name);
+                }
+            }
+        });
+        
+        groceryList[cat] = formattedItems.sort();
     });
     
     return groceryList;
