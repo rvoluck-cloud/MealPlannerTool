@@ -1,5 +1,5 @@
 // Meal Planner JavaScript
-// Version 3.2 - Ingredient Consolidation & Quantity Aggregation
+// Version 3.3 - Improved Ingredient Categorization
 
 // Google Sheets CSV export URL
 const SHEET_URL = "https://docs.google.com/spreadsheets/d/1oWS7CQUtyxvZheGa0HckhGGPt9_gxELDGdCL8-DtKbM/export?format=csv";
@@ -128,6 +128,57 @@ function parseIngredients(ingredientText) {
 function categorizeIngredient(ingredient) {
     const ingredientLower = ingredient.toLowerCase();
     
+    // Special case overrides - check these first
+    // Pantry items that might otherwise be miscategorized
+    const pantryOverrides = [
+        'broth', 'stock', 'bean', 'beans', 'chickpea', 'chickpeas', 'lentil', 'lentils',
+        'can', 'canned', 'tomato sauce', 'pasta sauce', 'marinara', 'sun-dried tomato',
+        'sundried tomato', 'sun dried tomato', 'tomatoes in oil', 'tomato paste',
+        'tomato puree', 'crushed tomato', 'diced tomato', 'canned tomato'
+    ];
+    
+    for (const keyword of pantryOverrides) {
+        if (ingredientLower.includes(keyword)) {
+            return 'pantry';
+        }
+    }
+    
+    // Dairy overrides
+    const dairyOverrides = ['half and half', 'half-and-half', 'heavy cream', 'whipping cream'];
+    for (const keyword of dairyOverrides) {
+        if (ingredientLower.includes(keyword)) {
+            return 'dairy';
+        }
+    }
+    
+    // Herb overrides - specific items that should be herbs
+    const herbOverrides = ['scallion', 'scallions', 'green onion', 'green onions', 
+                           'basil', 'parsley', 'cilantro', 'thyme', 'rosemary', 
+                           'oregano', 'dill', 'mint', 'sage', 'chives'];
+    for (const keyword of herbOverrides) {
+        if (ingredientLower.includes(keyword)) {
+            return 'herbs';
+        }
+    }
+    
+    // Vegetable overrides - make sure these go to vegetables
+    const vegetableOverrides = [
+        'lettuce', 'spinach', 'kale', 'arugula', 'cabbage', 'bok choy',
+        'carrot', 'celery', 'cucumber', 'zucchini', 'squash',
+        'bell pepper', 'jalapeño', 'poblano', 'serrano',
+        'broccoli', 'cauliflower', 'brussels sprout',
+        'potato', 'sweet potato', 'yam',
+        'corn', 'peas', 'green bean', 'snap pea',
+        'asparagus', 'artichoke', 'eggplant', 'radish',
+        'beet', 'turnip', 'parsnip', 'leek'
+    ];
+    for (const keyword of vegetableOverrides) {
+        if (ingredientLower.includes(keyword)) {
+            return 'vegetables';
+        }
+    }
+    
+    // Now check regular categories
     for (const [category, data] of Object.entries(CATEGORIES)) {
         if (category === 'pantry') continue;
         
